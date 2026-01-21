@@ -1,0 +1,45 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String       @id @default(uuid())
+  name          String
+  email         String       @unique
+  password_hash String
+  created_at    DateTime     @default(now())
+  credentials   Credential[]
+
+  @@map("users")
+}
+
+model Site {
+  id          String       @id @default(uuid())
+  name        String
+  url         String
+  icon        String
+  description String
+  credentials Credential[]
+
+  @@map("sites")
+}
+
+model Credential {
+  id                 String   @id @default(uuid())
+  user_id            String
+  site_id            String
+  login              String
+  password_encrypted String
+  updated_at         DateTime @updatedAt
+  
+  user User @relation(fields: [user_id], references: [id])
+  site Site @relation(fields: [site_id], references: [id])
+
+  @@unique([user_id, site_id]) // One credential per site per user
+  @@map("credentials")
+}
