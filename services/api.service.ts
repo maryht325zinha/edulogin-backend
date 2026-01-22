@@ -54,7 +54,18 @@ export const api = {
             headers: getHeaders()
         });
         if (!res.ok) throw new Error('Falha ao buscar credenciais');
-        return res.json();
+
+        const data = await res.json();
+        // Mapper: Backend (snake_case) -> Frontend (camelCase)
+        // Backend sends decrypted password as 'password', frontend expects 'passwordEncrypted'
+        return data.map((c: any) => ({
+            id: c.id,
+            userId: c.user_id,
+            siteId: c.site_id,
+            login: c.login,
+            passwordEncrypted: c.password,
+            updatedAt: c.updated_at
+        }));
     },
 
     async saveCredential(siteId: string, login: string, pass: string): Promise<Credential> {

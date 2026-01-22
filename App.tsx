@@ -112,7 +112,11 @@ const App: React.FC = () => {
       setName('');
       setEmail('');
     } catch (error) {
-      addToast('Erro ao criar conta. Tente outro e-mail.', 'error');
+      if (error instanceof Error && error.message.includes('already exists')) {
+        addToast('Este e-mail já está cadastrado.', 'error');
+      } else {
+        addToast('Erro ao criar conta. Tente outro e-mail.', 'error');
+      }
     } finally {
       setIsLoading(false);
     }
