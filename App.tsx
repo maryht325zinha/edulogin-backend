@@ -146,7 +146,11 @@ const App: React.FC = () => {
       setIsModalOpen(false);
 
     } catch (error) {
-      addToast('Erro ao salvar credencial.', 'error');
+      if (error instanceof Error) {
+        addToast(error.message, 'error');
+      } else {
+        addToast('Erro ao salvar credencial.', 'error');
+      }
     }
   };
 

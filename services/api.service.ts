@@ -14,17 +14,16 @@ const getHeaders = () => {
 export const api = {
     // Auth
     async login(email: string): Promise<AuthState> {
-        // Backend expects password, but frontend removed it. 
-        // We will send a default or handle "passwordless" flow if backend was updated.
-        // For now, assuming backend still expects password, we send a default dummy for the "email only" flow.
-        // Ideally backend should have been 'passwordless' fully, but sending default matches previous mock logic.
         const res = await fetch(`${API_URL}/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password: 'default123' })
         });
 
-        if (!res.ok) throw new Error('Falha no login');
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Falha no login');
+        }
         return res.json();
     },
 
@@ -35,7 +34,10 @@ export const api = {
             body: JSON.stringify({ name, email, password: 'default123' })
         });
 
-        if (!res.ok) throw new Error('Falha no cadastro');
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Falha no cadastro');
+        }
         return res.json();
     },
 
@@ -61,7 +63,10 @@ export const api = {
             headers: getHeaders(),
             body: JSON.stringify({ site_id: siteId, login, password: pass })
         });
-        if (!res.ok) throw new Error('Falha ao salvar credencial');
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Falha ao salvar credencial');
+        }
         return res.json();
     },
 
@@ -71,7 +76,10 @@ export const api = {
             headers: getHeaders(),
             body: JSON.stringify({ login, password: pass })
         });
-        if (!res.ok) throw new Error('Falha ao atualizar credencial');
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Falha ao atualizar credencial');
+        }
         return res.json();
     }
 };
