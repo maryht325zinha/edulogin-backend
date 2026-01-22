@@ -1,6 +1,6 @@
 import { User, Site, Credential, AuthState } from '../types';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'https://edulogin-backend.onrender.com/api';
 
 const getHeaders = () => {
     const session = localStorage.getItem('edupass_session');

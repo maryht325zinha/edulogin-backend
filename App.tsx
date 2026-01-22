@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { User, AuthState, Site, Credential, ToastMessage, ToastType } from './types';
-import { db } from './services/db.service';
+import { api } from './services/api.service';
 import { STORAGE_KEYS } from './constants';
 import SiteCard from './components/Dashboard/SiteCard';
 import CredentialModal from './components/Dashboard/CredentialModal';
@@ -15,6 +15,7 @@ const App: React.FC = () => {
 
   // UI State
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [isDark, setIsDark] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.THEME);
     return saved === 'dark';
@@ -29,18 +30,42 @@ const App: React.FC = () => {
   const [email, setEmail] = useState('');
 
   // App Data
-  // Using LocalStorage DB Service for immediate display
-  const sites = useMemo(() => db.getSites(), []);
+  const [sites, setSites] = useState<Site[]>([]);
   const [credentials, setCredentials] = useState<Credential[]>([]);
+
+  // Initialize Data
+  useEffect(() => {
+    const loadSites = async () => {
+      try {
+        const data = await api.getSites();
+        setSites(data);
+      } catch (error) {
+        console.error('Erro ao carregar sites:', error);
+        // Fallback or silent fail if api is waking up
+      }
+    };
+    loadSites();
+  }, []);
 
   // Load credentials for logged in user
   useEffect(() => {
-    if (auth.user) {
-      setCredentials(db.getUserCredentials(auth.user.id));
+    if (auth.isAuthenticated) {
+      const loadCredentials = async () => {
+        try {
+          const data = await api.getCredentials();
+          setCredentials(data);
+        } catch (error) {
+          console.error('Erro ao carregar credenciais:', error);
+          if (error instanceof Error && error.message.includes('401')) {
+            handleLogout();
+          }
+        }
+      };
+      loadCredentials();
     } else {
       setCredentials([]);
     }
-  }, [auth.user]);
+  }, [auth.isAuthenticated]);
 
   // Theme Sync
   useEffect(() => {
@@ -57,41 +82,40 @@ const App: React.FC = () => {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Using Local DB Service
-    const user = db.findUserByEmail(email);
-
-    if (user) {
-      // Login via e-mail only as requested
-      const session = { user, isAuthenticated: true, token: 'mock-jwt-token' };
-      setAuth(session);
-      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(session));
-      addToast(`Bem-vindo, ${user.name}!`);
-      // Clear sensitive state
+    setIsLoading(true);
+    try {
+      const response = await api.login(email);
+      setAuth({ ...response, isAuthenticated: true });
+      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ ...response, isAuthenticated: true }));
+      addToast(`Bem-vindo de volta, ${response.user?.name}!`);
       setEmail('');
-    } else {
-      addToast('Usuário não encontrado. Por favor, cadastre-se.', 'error');
+    } catch (error) {
+      addToast('Erro ao entrar. Verifique seu e-mail ou cadastre-se.', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (db.findUserByEmail(email)) {
-      addToast('Este e-mail já está em uso.', 'error');
-      return;
+    setIsLoading(true);
+    try {
+      const response = await api.register(name, email);
+      // Auto login after register? Backend returns auth state usually
+      // The current controller returns user and token, so yes.
+      setAuth({ ...response, isAuthenticated: true });
+      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ ...response, isAuthenticated: true }));
+      addToast('Conta criada com sucesso!');
+      setIsRegistering(false);
+      setName('');
+      setEmail('');
+    } catch (error) {
+      addToast('Erro ao criar conta. Tente outro e-mail.', 'error');
+    } finally {
+      setIsLoading(false);
     }
-
-    const newUser: User = {
-      id: Date.now().toString(),
-      name,
-      email,
-      passwordHash: btoa('default123'), // Mock default password
-      createdAt: new Date().toISOString()
-    };
-    db.saveUser(newUser);
-    addToast('Conta criada com sucesso! Entre com seu e-mail.');
-    setIsRegistering(false);
   };
 
   const handleLogout = () => {
@@ -100,22 +124,30 @@ const App: React.FC = () => {
     addToast('Sessão encerrada.');
   };
 
-  const handleSaveCredential = (login: string, pass: string) => {
+  const handleSaveCredential = async (login: string, pass: string) => {
     if (!auth.user || !selectedSite) return;
 
-    const newCred: Credential = {
-      id: Date.now().toString(),
-      userId: auth.user.id,
-      siteId: selectedSite.id,
-      login,
-      passwordEncrypted: btoa(pass),
-      updatedAt: new Date().toISOString()
-    };
+    try {
+      // Check if updating or creating
+      const existing = credentials.find(c => c.siteId === selectedSite.id);
+      let updatedCred: Credential;
 
-    db.saveCredential(newCred);
-    setCredentials(db.getUserCredentials(auth.user.id));
-    setIsModalOpen(false);
-    addToast(`Acesso salvo para ${selectedSite.name}`);
+      if (existing) {
+        updatedCred = await api.updateCredential(existing.id, login, pass);
+        addToast(`Acesso atualizado para ${selectedSite.name}`);
+      } else {
+        updatedCred = await api.saveCredential(selectedSite.id, login, pass);
+        addToast(`Acesso salvo para ${selectedSite.name}`);
+      }
+
+      // Refresh credentials locally
+      const newCredentials = await api.getCredentials();
+      setCredentials(newCredentials);
+      setIsModalOpen(false);
+
+    } catch (error) {
+      addToast('Erro ao salvar credencial.', 'error');
+    }
   };
 
   const copyToClipboard = (text: string, label: string) => {
@@ -138,7 +170,7 @@ const App: React.FC = () => {
             </div>
             <h1 className="text-2xl font-bold" style={{ marginBottom: '0.5rem' }}>EduLogin</h1>
             <p className="text-sub">Gerenciador de Acessos Escolares</p>
-            <p className="text-sub" style={{ fontSize: '0.75rem', marginTop: '0.2rem', opacity: 0.7 }}>Versão Local 🏠</p>
+            <p className="text-sub" style={{ fontSize: '0.75rem', marginTop: '0.2rem', opacity: 0.7 }}>Versão Nuvem ☁️</p>
           </div>
 
           <form onSubmit={isRegistering ? handleRegister : handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -152,6 +184,7 @@ const App: React.FC = () => {
                   className="input"
                   placeholder="Seu nome"
                   required
+                  disabled={isLoading}
                 />
               </div>
             )}
@@ -164,11 +197,17 @@ const App: React.FC = () => {
                 className="input"
                 placeholder="professor@escola.com"
                 required
+                disabled={isLoading}
               />
             </div>
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.5rem' }}>
-              {isRegistering ? 'Cadastrar' : 'Entrar'}
+            <button
+              type="submit"
+              className="btn btn-primary"
+              style={{ width: '100%', marginTop: '0.5rem', opacity: isLoading ? 0.7 : 1 }}
+              disabled={isLoading}
+            >
+              {isLoading ? 'Carregando...' : (isRegistering ? 'Cadastrar' : 'Entrar')}
             </button>
           </form>
 
@@ -177,6 +216,7 @@ const App: React.FC = () => {
               onClick={() => setIsRegistering(!isRegistering)}
               className="btn btn-secondary"
               style={{ fontSize: '0.875rem' }}
+              disabled={isLoading}
             >
               {isRegistering ? 'Já tem conta? Entre aqui' : 'Não tem conta? Cadastre-se'}
             </button>
@@ -251,16 +291,22 @@ const App: React.FC = () => {
 
         {/* Site Grid */}
         <div className="grid-sites">
-          {filteredSites.map(site => (
-            <SiteCard
-              key={site.id}
-              site={site}
-              credential={credentials.find(c => c.siteId === site.id)}
-              onEdit={(s) => { setSelectedSite(s); setIsModalOpen(true); }}
-              onCopy={copyToClipboard}
-              isDark={isDark}
-            />
-          ))}
+          {sites.length === 0 ? (
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '3rem', opacity: 0.6 }}>
+              {isLoading ? 'Carregando sites...' : 'Nenhum site disponível. Tente recarregar a página.'}
+            </div>
+          ) : (
+            filteredSites.map(site => (
+              <SiteCard
+                key={site.id}
+                site={site}
+                credential={credentials.find(c => c.siteId === site.id)}
+                onEdit={(s) => { setSelectedSite(s); setIsModalOpen(true); }}
+                onCopy={copyToClipboard}
+                isDark={isDark}
+              />
+            ))
+          )}
         </div>
       </main>
 
