@@ -13,6 +13,7 @@ router.get('/auth/me', authenticate, AuthController.me);
 
 // Sites
 router.get('/sites', SitesController.index);
+router.get('/sites/setup', SitesController.setup); // Temporary setup route
 
 // Credentials
 router.get('/credentials', authenticate, CredentialsController.index);
